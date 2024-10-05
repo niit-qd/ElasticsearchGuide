@@ -322,7 +322,7 @@
           exec /usr/share/elasticsearch/bin/elasticsearch "$@"
         fi
         ```
-        可知，实际上最终调用的还是`elasticsearch`启动程序。
+        查看`ExecStart`可知，实际上最终调用的还是`elasticsearch`启动程序。
         在`$ES_KEYSTORE_PASSPHRASE_FILE`环境变量存在的时候，会直接从文件路径中读取keystore的密码作为参数。
 
     <br/>
@@ -347,5 +347,176 @@
     | `ES_PATH_CONF`       | 配置文件目录（其中需要包括`eLasticsearch.yml`，`jvm.options`和log4j2.properties files）;默认为“/etc/elasticsearch”。                                                                                       |  |
     | `ES_JAVA_OPTS`       | 您可能需要应用的任何其他JVM系统属性。                                                                                                                                                                      |
     | `RESTART_ON_UPGRADE` | 在软件包升级上配置重新启动，默认为false。这意味着您将在手动安装软件包后必须重新启动Elasticsearch实例。这样做的原因是要确保群集中的升级不会导致连续的碎片重新定位，从而导致高网络流量并减少群集的响应时间。 |
+
+    > Distributions that use systemd require that system resource limits be configured via systemd rather than via the `/etc/sysconfig/elasticsearch` file. See [Systemd configuration](https://www.elastic.co/guide/en/elasticsearch/reference/current/setting-system-settings.html#systemd) for more information.
+    > 使用 systemd 的发行版要求通过 systemd 而不是通过 `/etc/sysconfig/elasticsearch` 文件来配置系统资源限制。有关更多信息，请参阅 [Systemd 配置](https://www.elastic.co/guide/en/elasticsearch/reference/current/setting-system-settings.html#systemd)。
+
+    注：该部分内容提供了一个重写配置的方法。
     
-8. 
+8. 将客户端连接到 Elasticsearch
+    [Connect clients to Elasticsearch](https://www.elastic.co/guide/en/elasticsearch/reference/current/rpm.html?by=history&from=kkframenew#_connect_clients_to_elasticsearch_4)
+    When you start Elasticsearch for the first time, TLS is configured automatically for the HTTP layer. A CA certificate is generated and stored on disk at:
+    首次启动 Elasticsearch 时，会自动为 HTTP 层配置 TLS。生成 CA 证书并将其存储在磁盘上的以下位置：
+    ```
+    /etc/elasticsearch/certs/http_ca.crt
+    ```
+    The hex-encoded SHA-256 fingerprint of this certificate is also output to the terminal. Any clients that connect to Elasticsearch, such as the [Elasticsearch Clients](https://www.elastic.co/guide/en/elasticsearch/client/index.html), Beats, standalone Elastic Agents, and Logstash must validate that they trust the certificate that Elasticsearch uses for HTTPS. Fleet Server and Fleet-managed Elastic Agents are automatically configured to trust the CA certificate. Other clients can establish trust by using either the fingerprint of the CA certificate or the CA certificate itself.
+    此证书的十六进制编码 SHA-256 指纹也会输出到终端。任何连接到 Elasticsearch 的客户端（例如 [Elasticsearch Clients](https://www.elastic.co/guide/en/elasticsearch/client/index.html)、Beats、独立 Elastic Agent 和 Logstash）都必须验证它们是否信任 Elasticsearch 用于 HTTPS 的证书。Fleet Server 和 Fleet 管理的 Elastic Agent 会自动配置为信任 CA 证书。其他客户端可以使用 CA 证书的指纹或 CA 证书本身来建立信任。
+    
+    If the auto-configuration process already completed, you can still obtain the fingerprint of the security certificate. You can also copy the CA certificate to your machine and configure your client to use it.
+    如果自动配置过程已完成，您仍然可以获取安全证书的指纹。您还可以将 CA 证书复制到您的机器并配置您的客户端以使用它。
+
+9. 使用CA指纹
+    [Use the CA fingerprint](https://www.elastic.co/guide/en/elasticsearch/reference/current/rpm.html?by=history&from=kkframenew#_use_the_ca_fingerprint_4)
+
+    Copy the fingerprint value that’s output to your terminal when Elasticsearch starts, and configure your client to use this fingerprint to establish trust when it connects to Elasticsearch.
+    将 Elasticsearch 启动时输出到终端的指纹值复制，并配置客户端在连接到 Elasticsearch 时使用此指纹建立信任。
+    示例：
+    ``` shell
+    [root@192 ~]# cat /etc/elasticsearch/certs/http_ca.crt
+    -----BEGIN CERTIFICATE-----
+    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
+    -----END CERTIFICATE-----
+    ```
+
+    If the auto-configuration process already completed, you can still obtain the fingerprint of the security certificate by running the following command. The path is to the auto-generated CA certificate for the HTTP layer.
+    如果自动配置过程已完成，您仍然可以通过运行以下命令获取安全证书的指纹。路径是自动生成的 HTTP 层 CA 证书。
+    ``` shell
+    openssl x509 -fingerprint -sha256 -in config/certs/http_ca.crt
+    ```
+
+    The command returns the security certificate, including the fingerprint. The `issuer` should be `Elasticsearch security auto-configuration HTTP CA`.
+    该命令返回安全证书，包括指纹。`issuer` 应该是 `Elasticsearch security auto-configuration HTTP CA`。
+    ``` shell
+    issuer= /CN=Elasticsearch security auto-configuration HTTP CA
+    SHA256 Fingerprint=<fingerprint>
+    ```
+
+    示例：
+    ``` shell
+    [root@192 ~]# openssl x509 -fingerprint -sha256 -in /etc/elasticsearch/certs/http_ca.crt
+    SHA256 Fingerprint=5C:B2:91:6E:E5:C6:C5:C3:D2:2B:63:AE:02:7F:6C:E9:C2:3A:9D:29:F9:AD:63:DD:FB:E1:55:94:05:BA:46:71
+    -----BEGIN CERTIFICATE-----
+    MIIFWjCCA0KgAwIBAgIVALYuN0xzqw7IEF63nOT/qPzKGAiJMA0GCSqGSIb3DQEB
+    CwUAMDwxOjA4BgNVBAMTMUVsYXN0aWNzZWFyY2ggc2VjdXJpdHkgYXV0by1jb25m
+    aWd1cmF0aW9uIEhUVFAgQ0EwHhcNMjQxMDAyMTEzODEzWhcNMjcxMDAyMTEzODEz
+    WjA8MTowOAYDVQQDEzFFbGFzdGljc2VhcmNoIHNlY3VyaXR5IGF1dG8tY29uZmln
+    dXJhdGlvbiBIVFRQIENBMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA
+    lNkBokbjn/5unBI+7THlYbeFoAb05tjqZOn6oj/2Z5t7MmU96AowKpCoZp/5QOeP
+    NySu04Ri+PX+W62F4/pQdTCOvxUmN2Mac/8osURRDXJIXPkwc9Bt5MBiqyo/5YGN
+    C5HiWzzk6P3RWqZCE8yk9Ibd7I09WRkxvQPcAhcck7L7PdFJ9hffpw3FEILyraoQ
+    3n5cAXaHieFCkEjaKCnx+CGdmybLaPiOaQLqhxXe/MT6DnIHDoJ++RPEjydhd28C
+    bRyRrUskCWgUsqhAgSUDguSPPMZ5zAd2maeZQbVgKePt+Rgct1ELRAZCzTXYJ7Oc
+    gYvZkitvYohNYT0gfhcKy7mWd8pA+c3icx26A+fNjs9X7+dEZOwMKguXKAPzj1fZ
+    9pJRLAoQnpbTDlGP5OT7Y3q9tclLI65vrTmA6+PcpLTLPR0BL8pOGeQ8rWLqul8/
+    rAhvwge9HfqVcmkUs178QQJEC85VMOSIBf7NYZ++q1Vr7IDgCVcQWGIGsFdBTaP5
+    9ZcujKMrGF0w5u62HXXdTsPUx5nQhUxno4fLcyTaPvjFIISiDwe1yTZ7Q59YQKEk
+    9QbSU0ydzEkgXBvihxMdnZnOC7rbPsB/St298zraPu3VUCqZqP8LT2Xvko9HIzXL
+    /A2G9DSTOugToyZmR78dafDACpOD/ePopy9/k5llUl0CAwEAAaNTMFEwHQYDVR0O
+    BBYEFN454CkRC8wbHolCh8XKo9zwszkmMB8GA1UdIwQYMBaAFN454CkRC8wbHolC
+    h8XKo9zwszkmMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggIBAHsG
+    xjVJkBo8TsCOUJ8p6JHosLKKtxOMZOmh/mfPjavRNJ9w/YConB57usW4pvMA6lGb
+    lKXVm/GbWoxQz0EBHNIQ6hF7ZA5neJEGX97Uvov3I6TrXcRpRd5msbjiH1I7QKMe
+    +rjnEVgYoYUm9vXHx2Wnb/PX047XaYCnBQDO0oCcmck+bmeXkzw4TfhGz8Fn/ysT
+    Cd6NPnD+o3X72FQjItSVvakweweLDWejNpet+JH8MUYbuoxn8xBsarB/EdgXYZZ5
+    d3h8zDdsL2QDCGoD5eYkTNbALz9+V2mcHa93tZC1uHGT1FVOZWmt5lExklZV3z9L
+    +4dvIsLAdR1Zt79lzNU/Gmw0Gymv6OOksj4e2VwGiUgSYVI4zC4flAuD3PWZ9VAE
+    e/cw9sPGJ4wNqSsJEMFIX1OTpLS/TbSmCFCaIDcgf8dk98Tj6alm8bKSTJz1gxVl
+    rNkbqmJRCCEf5zbyOtsmfDNHSVysCtvs9c10RY9bBuxJvOle/u5a6L/9yK8gUjQm
+    58zmw1/itn9MeSWpHsxS7aDBTPo0lCbidIK6E0p+2fgEDZ82zfmTbAT25odXQ8aa
+    Eh3R2GDXjIj3+3eG9aPsT6B+0JPLAL3dKJUYOLAquhRyXWBuP/XZSXiJ3I3oGz1v
+    /ZgvX7fuRKBFkzDJiSvpFwvCdpJKKAJr+IMNsVaC
+    -----END CERTIFICATE-----
+    ```
+
+10. 使用 CA 证书
+    [Use the CA certificate](https://www.elastic.co/guide/en/elasticsearch/reference/current/rpm.html?by=history&from=kkframenew#_use_the_ca_certificate_4)
+
+    If your library doesn’t support a method of validating the fingerprint, the auto-generated CA certificate is created in the following directory on each Elasticsearch node:
+    如果您的库不支持验证指纹的方法，则自动生成的 CA 证书将在每个 Elasticsearch 节点上的以下目录中创建：
+    ```
+    /etc/elasticsearch/certs/http_ca.crt
+    ```
+
+    Copy the `http_ca.crt` file to your machine and configure your client to use this certificate to establish trust when it connects to Elasticsearch.
+    将 `http_ca.crt` 文件复制到您的机器，并配置您的客户端以在连接到 Elasticsearch 时使用此证书建立信任。
+
+
+11. RPM 的目录布局
+    [Directory layout of RPM](https://www.elastic.co/guide/en/elasticsearch/reference/current/rpm.html?by=history&from=kkframenew#rpm-layout)
+
+    The RPM places config files, logs, and the data directory in the appropriate locations for an RPM-based system:
+    RPM 将配置文件、日志和数据目录放置在基于 RPM 的系统的适当位置：
+
+    | Type        | Description                                                                                                                                                          | Default Location                   | Setting                                                                                                                                                                     |
+    | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **home**    | Elasticsearch home directory or `$ES_HOME`                                                                                                                           | `/usr/share/elasticsearch`         |                                                                                                                                                                             |
+    | **bin**     | Binary scripts including `elasticsearch` to start a node and `elasticsearch-plugin` to install plugins                                                               | `/usr/share/elasticsearch/bin`     |                                                                                                                                                                             |
+    | **conf**    | Configuration files including `elasticsearch.yml`                                                                                                                    | `/etc/elasticsearch`               | `<a class="xref" href="https://www.elastic.co/guide/en/elasticsearch/reference/current/settings.html#config-files-location" title="Config files location">ES_PATH_CONF</a>` |
+    | **conf**    | Environment variables including heap size, file descriptors.                                                                                                         | `/etc/sysconfig/elasticsearch`     |                                                                                                                                                                             |
+    | **conf**    | Generated TLS keys and certificates for the transport and http layer.                                                                                                | `/etc/elasticsearch/certs`         |                                                                                                                                                                             |
+    | **data**    | The location of the data files of each index / shard allocated on the node.                                                                                          | `/var/lib/elasticsearch`           | `path.data`                                                                                                                                                                 |
+    | **jdk**     | The bundled Java Development Kit used to run Elasticsearch. Can be overridden by setting the `ES_JAVA_HOME` environment variable in `/etc/sysconfig/elasticsearch`.  | `/usr/share/elasticsearch/jdk`     |                                                                                                                                                                             |
+    | **logs**    | Log files location.                                                                                                                                                  | `/var/log/elasticsearch`           | `path.logs`                                                                                                                                                                 |
+    | **plugins** | Plugin files location. Each plugin will be contained in a subdirectory.                                                                                              | `/usr/share/elasticsearch/plugins` |                                                                                                                                                                             |
+    | **repo**    | Shared file system repository locations. Can hold multiple locations. A file system repository can be placed in to any subdirectory of any directory specified here. | Not configured                     | `path.repo`                                                                                                                                                                 |
+    注：该表用于基于使用rpm方式安装的Elasticsearch。
+12. 安全证书和密钥
+    [Security certificates and keys](https://www.elastic.co/guide/en/elasticsearch/reference/current/rpm.html?by=history&from=kkframenew#_security_certificates_and_keys_3)
+
+    When you install Elasticsearch, the following certificates and keys are generated in the Elasticsearch configuration directory, which are used to connect a Kibana instance to your secured Elasticsearch cluster and to encrypt internode communication. The files are listed here for reference.
+    安装 Elasticsearch 时，Elasticsearch 配置目录中会生成以下证书和密钥，用于将 Kibana 实例连接到安全的 Elasticsearch 集群并加密节点间通信。此处列出了这些文件以供参考。
+    `/etc/elasticsearch/certs`
+    - `http_ca.crt`
+        The CA certificate that is used to sign the certificates for the HTTP layer of this Elasticsearch cluster.
+        用于签署此 Elasticsearch 集群的 HTTP 层证书的 CA 证书。
+    - `http.p12`
+        Keystore that contains the key and certificate for the HTTP layer for this node.
+        包含此节点的 HTTP 层的密钥和证书的密钥库。
+    - `transport.p12`
+        Keystore that contains the key and certificate for the transport layer for all the nodes in your cluster.
+        包含集群中所有节点的传输层的密钥和证书的密钥库。
+    
+    `http.p12` and `transport.p12` are password-protected PKCS#12 keystores. Elasticsearch stores the passwords for these keystores as [secure settings](https://www.elastic.co/guide/en/elasticsearch/reference/current/secure-settings.html). To retrieve the passwords so that you can inspect or change the keystore contents, use the [bin/elasticsearch-keystore](https://www.elastic.co/guide/en/elasticsearch/reference/current/elasticsearch-keystore.html) tool.
+    `http.p12` 和 `transport.p12` 是受密码保护的 PKCS#12 密钥库。Elasticsearch 将这些密钥库的密码存储为 [secure settings](https://www.elastic.co/guide/en/elasticsearch/reference/current/secure-settings.html)。要检索密码以便检查或更改密钥库内容，请使用 [bin/elasticsearch-keystore](https://www.elastic.co/guide/en/elasticsearch/reference/current/elasticsearch-keystore.html) 工具。
+
+    Use the following command to retrieve the password for `http.p12`:
+    使用以下命令检索“http.p12”的密码：
+    ``` shell
+    bin/elasticsearch-keystore show xpack.security.http.ssl.keystore.secure_password
+    ```
+
+    Use the following command to retrieve the password for `transport.p12`:
+    使用以下命令检索 `transport.p12` 的密码：
+    ``` shell
+    bin/elasticsearch-keystore show xpack.security.transport.ssl.keystore.secure_password
+    ```
+
