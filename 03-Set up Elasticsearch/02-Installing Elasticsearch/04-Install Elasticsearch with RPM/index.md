@@ -158,7 +158,7 @@ sudo systemctl start elasticsearch.service
     # 这里etc/elasticsearch的初始文档的备份目录
     cp -rf etc/elasticsearch/* /etc/elasticsearch/
     ```
-    注：这里制作粗略处理，未细化查看具体文件。*待后续有时间再对比。*
+    注：这里只关注了`/elasticsearch.yml`。*其它文件的变更，待后续验证。*
 
 **几个需要注意的地方**
 1. 为了简化操作，这里禁用了防火墙。
