@@ -106,13 +106,25 @@ sudo systemctl start elasticsearch.service
     ``` shell
     /usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s node
     ```
-    注：先启动elasticsearch。`systemctl start elasticsearch.service`
     示例：`101 节点`
     ``` shell
     [root@192 ~]# /usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s node
     eyJ2ZXIiOiI4LjE0LjAiLCJhZHIiOlsiMTkyLjE2OC42NS4xMDE6OTIwMCJdLCJmZ3IiOiI1Y2IyOTE2ZWU1YzZjNWMzZDIyYjYzYWUwMjdmNmNlOWMyM2E5ZDI5ZjlhZDYzZGRmYmUxNTU5NDA1YmE0NjcxIiwia2V5Ijoib3lFZlRaSUJGZUl6Zk5uVlo5S0Y6VmM3MmR0OE5SOGlaM0VuQkZGdldpdyJ9
     ```
     该token会超期，超期后，重新执行该命令即可，创建一个新的。
+
+    注：先启动elasticsearch。`systemctl start elasticsearch.service`
+    注意，为了执行`elasticsearch-reconfigure-node`的节点可以连接到当前节点所在的集群，在首次执行`elasticsearch-create-enrollment-token`命令的节点启动之前，首先修改`/etc/elasticsearch/elasticsearch.yml`的`network.hos`。
+    请参考：[Commonly used network settings](https://www.elastic.co/guide/en/elasticsearch/reference/current/modules-network.html#common-network-settings)、[Special values for network addresses](https://www.elastic.co/guide/en/elasticsearch/reference/current/modules-network.html#network-interface-values)。
+    *只要不选择`_local_`、`127.0.0.1`这种只能适配伪集群的IP就行。*
+    示例：
+    ``` yml
+    network.host: _site_
+    # 或
+    network.host: 具体的IP
+    # 或
+    network.host: 0.0.0.0
+    ```
 2. 复制上面得到的token
     Copy the enrollment token, which is output to your terminal.
     复制输出到您的终端的注册令牌。
@@ -140,10 +152,15 @@ sudo systemctl start elasticsearch.service
     - `/etc/elasticsearch/elasticsearch.yml`
         主要修改是：
         `SECURITY AUTO CONFIGURATION` 相关
-        1. 变更修改时间
-        2. cluster.initial_master_nodes：补充已知节点。即，在当前节点的后面追加其它节点的信息。例如当前是["192.168.65.101"]，执行时，如果当前集群中只有原始节点（执行`elasticsearch-create-enrollment-token`命令的节点）101，那么执行后，其值被修改为`["192.168.65.101:9300", "192.168.65.102:9300"]`；如果已经有101和102节点，那么执行后，其值被修改为`["192.168.65.101:9300", "192.168.65.102:9300", "192.168.65.103:9300"]`。
-        3. `#transport.host: 0.0.0.0`被打开，变成`transport.host: 0.0.0.0`。
-        4. 注：此命令只影响当前节点中的`/etc/elasticsearch/elasticsearch.yml`中的内容，之前节点的值不影响。而且，当重新启动后，重启之前已经创建的节点不变。
+        1. 执行`elasticsearch-create-enrollment-token`命令的节点
+            没有变化
+        2. 执行`elasticsearch-reconfigure-node`命令的节点
+            删除`cluster.initial_master_nodes`、`http.host`、`transport.host`的配置和注释。
+            增加执行`elasticsearch-create-enrollment-token`命令的节点的ip和端口到`discovery.seed_hosts`，例如：
+            ``` yml
+            # Discover existing nodes in the cluster
+            discovery.seed_hosts: ["192.168.65.101:9300"]
+            ```
 4. 如果原先的token过期或者发生变化，重新执行会报错：
     ``` log
     ERROR: Aborting enrolling to cluster. Could not communicate with the node on any of the addresses from the enrollment token. All of [192.168.65.101:9200] were attempted., with exit code 69
@@ -175,8 +192,50 @@ sudo systemctl start elasticsearch.service
     ```
 3. VMware问题
     如果先在某个VMware实例中安装Elasticsearch，然后通过克隆创建其它cluster节点实例，则会报错。目前上不知解决方法。例如，已经创建了100节点，通过克隆方式创建101、102、103节点。*待后续待机解决。*
-
----
+4. **目前无法解决**执行`elasticsearch-create-enrollment-token`的节点**变更IP**的问题
+    1. 如果IP变更之后，并且token过期，所以需要重写创建token。
+      执行之前的命令会报异常：
+      ``` shell
+      [root@192 ~]# /usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s node
+      06:03:52.245 [main] WARN  org.elasticsearch.common.ssl.DiagnosticTrustManager - failed to establish trust with server at [192.168.65.108]; the server provided a certificate with subject name [CN=192.168.65.101], fingerprint [c86e82e047189d58214f6afcb0f937ac46132e2c], no keyUsage and extendedKeyUsage [serverAuth]; the certificate is valid between [2024-10-02T11:38:14Z] and [2026-10-02T11:38:14Z] (current time is [2024-10-09T10:03:52.227453800Z], certificate dates are valid); the session uses cipher suite [TLS_AES_256_GCM_SHA384] and protocol [TLSv1.3]; the certificate has subject alternative names [IP:192.168.65.101,DNS:192.168.65.101,IP:0:0:0:0:0:0:0:1,IP:127.0.0.1,IP:fe80:0:0:0:48c4:f873:2fcd:1dc1,DNS:localhost]; the certificate is issued by [CN=Elasticsearch security auto-configuration HTTP CA]; the certificate is signed by (subject [CN=Elasticsearch security auto-configuration HTTP CA] fingerprint [91b71e79753bcd893a0e61855b02fbf15063a72e] {trusted issuer}) which is self-issued; the [CN=Elasticsearch security auto-configuration HTTP CA] certificate is trusted in this ssl context ([xpack.security.http.ssl (with trust configuration: Composite-Trust{JDK-trusted-certs,StoreTrustConfig{path=certs/http.p12, password=<non-empty>, type=PKCS12, algorithm=PKIX}})])
+      java.security.cert.CertificateException: No subject alternative names matching IP address 192.168.65.108 found
+      ```
+      临时处理方案是，追加`--url参数`。注意不能使用实际的对外IP地址。
+      ``` shell
+      /usr/share/elasticsearch/bin/elasticsearch-create-enrollment-token -s node --url https://localhost:9200
+      ```
+      然后在其它节点上面修改`/elasticsearch.yml`，修改`discovery.seed_hosts`即可。
+    2. 但是上述方案，只能对已经加入集群的节点有效。
+    3. 对于新节点，直接执行会报异常，目前无法解决。
+      ``` shell
+      [root@192 ~]# /usr/share/elasticsearch/bin/elasticsearch-reconfigure-node --enrollment-token eyJ2ZXIiOiI4LjE0LjAiLCJhZHIiOlsiMTkyLjE2OC42NS4xMDE6OTIwMCJdLCJmZ3IiOiI1Y2IyOTE2ZWU1YzZjNWMzZDIyYjYzYWUwMjdmNmNlOWMyM2E5ZDI5ZjlhZDYzZGRmYmUxNTU5NDA1YmE0NjcxIiwia2V5IjoiZ24wNmNKSUJZQzhpTUlDTXZBTjQ6MEhQUVRla0xUX21wS1owQzl6ODNVQSJ9
+      
+      This node will be reconfigured to join an existing cluster, using the enrollment token that you provided.
+      This operation will overwrite the existing configuration. Specifically:
+        - Security auto configuration will be removed from elasticsearch.yml
+        - The [certs] config directory will be removed
+        - Security auto configuration related secure settings will be removed from the elasticsearch.keystore
+      Do you want to continue with the reconfiguration process [y/N]y
+      Unable to communicate with the node on https://192.168.65.101:9200/_security/enroll/node. Error was No route to host
+      ERROR: Aborting enrolling to cluster. Could not communicate with the node on any of the addresses from the enrollment token. All of [192.168.65.101:9200] were attempted., with exit code 69
+      ```
+      此时，`/elasticsearch.yml`被删除了`BEGIN SECURITY AUTO CONFIGURATION`中的内容。
+      后续重试，报新异常：
+      ``` shell
+      [root@192 ~]# /usr/share/elasticsearch/bin/elasticsearch-reconfigure-node --enrollment-token eyJ2ZXIiOiI4LjE0LjAiLCJhZHIiOlsiMTkyLjE2OC42NS4xMDg6OTIwMCJdLCJmZ3IiOiI1Y2IyOTE2ZWU1YzZjNWMzZDIyYjYzYWUwMjdmNmNlOWMyM2E5ZDI5ZjlhZDYzZGRmYmUxNTU5NDA1YmE0NjcxIiwia2V5IjoiWnFIWmNKSUJhZWRUdWVySzZIclY6UnJWeklzMlhRNEtSTzBhZjFYQ1ZLQSJ9
+      Generates all the necessary security configuration for a node in a secured cluster
+      
+      Option              Description
+      ------              -----------
+      -E <KeyValuePair>   Configure a setting
+      --enrollment-token  The enrollment token to use
+      -h, --help          Show help
+      -s, --silent        Show minimal output
+      -v, --verbose       Show verbose output
+      
+      
+      ERROR: Aborting enrolling to cluster. This node doesn't appear to be auto-configured for security. Expected configuration is missing from elasticsearch.yml., with exit code 64
+      ```
 
 ### 系统索引的自动创建
 
